@@ -9,7 +9,7 @@
 <img src="https://i.imgur.com/72zHxbK.jpg" alt="Project Flow: Discord, YouTube, and Group Synchronization" width="65%">
 <br><br>  
 
-# JAÇA CITY - WATCH PARTY
+# ASSITA JUNTO - WATCH PARTY
 
 **Uma plataforma web aberta para assistir vídeos do YouTube em grupo, integrada ao Discord.**
 
