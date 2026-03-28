@@ -11,8 +11,13 @@
                    @bind="_nameInput"
                    @bind:event="oninput"
                    @onkeydown="OnKeyDown"
-                   maxlength="30"
+                   maxlength="50"
                    autofocus />
+
+            @if (!string.IsNullOrWhiteSpace(_validationMessage))
+            {
+                <div class="text-danger small mb-2">@_validationMessage</div>
+            }
 
             <div class="d-grid gap-2">
                 <button class="btn btn-primary py-3 fw-bold text-uppercase"
@@ -29,10 +34,19 @@
     [Parameter] public EventCallback<string> OnConfirm { get; set; }
 
     private string _nameInput = "";
+    private string? _validationMessage;
 
     private async Task Submit()
     {
         if (string.IsNullOrWhiteSpace(_nameInput)) return;
+
+        if (_nameInput.Trim().Length > AuthStateService.MaxUsernameLength)
+        {
+            _validationMessage = $"Nome com no máximo {AuthStateService.MaxUsernameLength} caracteres.";
+            return;
+        }
+
+        _validationMessage = null;
         await OnConfirm.InvokeAsync(_nameInput.Trim());
     }
 

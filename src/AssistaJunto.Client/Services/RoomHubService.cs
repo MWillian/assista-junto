@@ -18,6 +18,7 @@ public class RoomHubService : IAsyncDisposable
     public event Action<RoomUserModel>? OnUserJoined;
     public event Action<string>? OnUserLeft;
     public event Action<List<RoomUserModel>>? OnUserListReceived;
+    public event Action<int, string>? OnChatBlocked;
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
@@ -61,6 +62,9 @@ public class RoomHubService : IAsyncDisposable
 
         _hubConnection.On<List<RoomUserModel>>("ReceiveUserList", users =>
             OnUserListReceived?.Invoke(users));
+
+        _hubConnection.On<int, string>("ChatBlocked", (secondsRemaining, message) =>
+            OnChatBlocked?.Invoke(secondsRemaining, message));
 
         await _hubConnection.StartAsync();
     }

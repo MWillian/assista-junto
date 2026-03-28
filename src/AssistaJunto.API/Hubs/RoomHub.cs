@@ -15,6 +15,10 @@ public class RoomHub : Hub
     private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, RoomUserInfo>> _roomUsers = new();
     private static readonly ConcurrentDictionary<string, string> _connectionRooms = new();
     private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _roomUserCounts = new();
+    private static readonly ConcurrentDictionary<string, ChatThrottleState> _chatThrottleStates = new();
+    private const int ChatBurstLimit = 3;
+    private const int ChatBurstWindowSeconds = 20;
+    private const int ChatBlockSeconds = 60;
 
     public RoomHub(IRoomService roomService, IChatService chatService, IPlaylistService playlistService)
     {
@@ -180,6 +184,14 @@ public class RoomHub : Hub
         try
         {
             var username = GetUsername();
+
+            var (allowed, secondsRemaining) = ValidateChatThrottle(roomHash, username);
+            if (!allowed)
+            {
+                await Clients.Caller.SendAsync("ChatBlocked", secondsRemaining, "Você enviou mensagens muito rápido. Aguarde para voltar a enviar.");
+                return;
+            }
+
             var message = await _chatService.SendMessageAsync(roomHash, username, content);
             await Clients.Group(roomHash).SendAsync("ReceiveChatMessage", message);
         }
@@ -229,6 +241,53 @@ public class RoomHub : Hub
     {
         var httpContext = Context.GetHttpContext();
         var username = httpContext?.Request.Query["username"].FirstOrDefault();
-        return string.IsNullOrWhiteSpace(username) ? "Anônimo" : username;
+        if (string.IsNullOrWhiteSpace(username))
+            return "Anônimo";
+
+        username = username.Trim();
+        if (username.Length > 50)
+            throw new HubException("Nome de usuário deve ter no máximo 50 caracteres.");
+
+        return username;
+    }
+
+    private static (bool Allowed, int SecondsRemaining) ValidateChatThrottle(string roomHash, string username)
+    {
+        var now = DateTime.UtcNow;
+        var key = $"{roomHash}:{username.ToLowerInvariant()}";
+        var state = _chatThrottleStates.GetOrAdd(key, _ => new ChatThrottleState());
+
+        lock (state.Sync)
+        {
+            if (state.BlockedUntilUtc.HasValue && state.BlockedUntilUtc.Value > now)
+            {
+                var remaining = (int)Math.Ceiling((state.BlockedUntilUtc.Value - now).TotalSeconds);
+                return (false, Math.Max(1, remaining));
+            }
+
+            if (state.BlockedUntilUtc.HasValue && state.BlockedUntilUtc.Value <= now)
+                state.BlockedUntilUtc = null;
+
+            var windowStart = now.AddSeconds(-ChatBurstWindowSeconds);
+            while (state.MessageTimesUtc.Count > 0 && state.MessageTimesUtc.Peek() < windowStart)
+                state.MessageTimesUtc.Dequeue();
+
+            if (state.MessageTimesUtc.Count >= ChatBurstLimit)
+            {
+                state.BlockedUntilUtc = now.AddSeconds(ChatBlockSeconds);
+                state.MessageTimesUtc.Clear();
+                return (false, ChatBlockSeconds);
+            }
+
+            state.MessageTimesUtc.Enqueue(now);
+            return (true, 0);
+        }
+    }
+
+    private sealed class ChatThrottleState
+    {
+        public object Sync { get; } = new();
+        public Queue<DateTime> MessageTimesUtc { get; } = new();
+        public DateTime? BlockedUntilUtc { get; set; }
     }
 }

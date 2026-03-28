@@ -2,12 +2,14 @@ using AssistaJunto.Application.DTOs;
 using AssistaJunto.Application.Interfaces;
 using AssistaJunto.API.Hubs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 
 namespace AssistaJunto.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("api-global")]
 public class RoomsController : ControllerBase
 {
     private readonly IRoomService _roomService;
@@ -22,12 +24,20 @@ public class RoomsController : ControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting("create-room")]
     public async Task<IActionResult> CreateRoom([FromBody] CreateRoomRequest request)
     {
         var username = GetUsername();
-        if (username is null) return BadRequest("Header X-Username é obrigatório.");
-        var room = await _roomService.CreateRoomAsync(request, username);
-        return CreatedAtAction(nameof(GetRoom), new { hash = room.Hash }, room);
+        if (username is null) return BadRequest("Header X-Username é obrigatório e deve ter no máximo 50 caracteres.");
+        try
+        {
+            var room = await _roomService.CreateRoomAsync(request, username);
+            return CreatedAtAction(nameof(GetRoom), new { hash = room.Hash }, room);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
     }
 
     [HttpGet]
@@ -55,21 +65,23 @@ public class RoomsController : ControllerBase
     }
 
     [HttpPost("{hash}/playlist")]
+    [EnableRateLimiting("playlist-write")]
     public async Task<IActionResult> AddToPlaylist(string hash, [FromBody] AddToPlaylistRequest request)
     {
         var username = GetUsername();
-        if (username is null) return BadRequest("Header X-Username é obrigatório.");
+        if (username is null) return BadRequest("Header X-Username é obrigatório e deve ter no máximo 50 caracteres.");
         var item = await _playlistService.AddToPlaylistAsync(hash, request, username);
         return Ok(item);
     }
 
     [HttpPost("{hash}/playlist/from-url")]
+    [EnableRateLimiting("playlist-write")]
     public async Task<IActionResult> AddPlaylistByUrl(string hash, [FromBody] AddPlaylistByUrlRequest request)
     {
         try
         {
             var username = GetUsername();
-            if (username is null) return BadRequest("Header X-Username é obrigatório.");
+            if (username is null) return BadRequest("Header X-Username é obrigatório e deve ter no máximo 50 caracteres.");
             var result = await _playlistService.AddPlaylistByUrlAsync(hash, request.Url, username);
 
             foreach (var item in result.Items)
@@ -117,7 +129,7 @@ public class RoomsController : ControllerBase
         try
         {
             var username = GetUsername();
-            if (username is null) return BadRequest("Header X-Username é obrigatório.");
+            if (username is null) return BadRequest("Header X-Username é obrigatório e deve ter no máximo 50 caracteres.");
             await _roomService.DeleteRoomAsync(hash, username);
             return NoContent();
         }
@@ -138,6 +150,9 @@ public class RoomsController : ControllerBase
     private string? GetUsername()
     {
         var username = Request.Headers["X-Username"].FirstOrDefault();
-        return string.IsNullOrWhiteSpace(username) ? null : username;
+        if (string.IsNullOrWhiteSpace(username)) return null;
+
+        username = username.Trim();
+        return username.Length > 50 ? null : username;
     }
 }

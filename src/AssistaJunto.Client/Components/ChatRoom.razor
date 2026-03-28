@@ -7,6 +7,15 @@
         </h5>
     </div>
 
+    @if (IsChatBlocked)
+    {
+        <div class="chat-block-alert mx-3 mt-3 mb-2">
+            <i class="bi bi-shield-exclamation me-2"></i>
+            <span>@(string.IsNullOrWhiteSpace(ChatBlockMessage) ? "Chat temporariamente bloqueado por spam." : ChatBlockMessage)</span>
+            <strong class="ms-1">(@ChatBlockSecondsRemaining s)</strong>
+        </div>
+    }
+
     <div class="chat-messages-area" @ref="_chatContainer">
         @if (Messages == null || !Messages.Any())
         {
@@ -43,8 +52,9 @@
                    placeholder="Digite uma mensagem..."
                    @bind="ChatInput"
                    @bind:event="oninput"
-                   @onkeydown="HandleKeyDown" />
-            <button class="btn btn-primary send-btn px-3 fw-bold" type="button" @onclick="SendMessage">
+                   @onkeydown="HandleKeyDown"
+                   disabled="@IsChatBlocked" />
+            <button class="btn btn-primary send-btn px-3 fw-bold" type="button" @onclick="SendMessage" disabled="@IsChatBlocked">
                 ENVIAR
             </button>
         </div>
@@ -54,6 +64,9 @@
 @code {
     [Parameter] public List<ChatMessageModel> Messages { get; set; } = new();
     [Parameter] public EventCallback<string> OnSendMessage { get; set; }
+    [Parameter] public bool IsChatBlocked { get; set; }
+    [Parameter] public int ChatBlockSecondsRemaining { get; set; }
+    [Parameter] public string? ChatBlockMessage { get; set; }
 
     private string ChatInput { get; set; } = "";
     private ElementReference _chatContainer;
@@ -62,7 +75,7 @@
 
     private async Task SendMessage()
     {
-        if (_isSending || string.IsNullOrWhiteSpace(ChatInput))
+        if (_isSending || IsChatBlocked || string.IsNullOrWhiteSpace(ChatInput))
             return;
 
         _isSending = true;

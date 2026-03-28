@@ -20,7 +20,7 @@
                                @bind="_editNameInput"
                                @bind:event="oninput"
                                @onkeydown="OnEditKeyDown"
-                               maxlength="30"
+                               maxlength="50"
                                @ref="_editInput" />
                         <button class="btn btn-sm btn-success px-2 py-0" @onclick="SaveName" disabled="@string.IsNullOrWhiteSpace(_editNameInput)" title="Salvar">
                             ✓
@@ -46,6 +46,11 @@
         </div>
     </header>
 
+    @if (!string.IsNullOrWhiteSpace(_editNameError))
+    {
+        <div class="name-edit-alert">@_editNameError</div>
+    }
+
     <main class="content-area">
         @Body
     </main>
@@ -55,6 +60,7 @@
     private bool _isEditingName;
     private string _editNameInput = "";
     private ElementReference _editInput;
+    private string? _editNameError;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -71,20 +77,29 @@
     private void StartEdit()
     {
         _editNameInput = AuthState.Username ?? "";
+        _editNameError = null;
         _isEditingName = true;
     }
 
     private void CancelEdit()
     {
         _isEditingName = false;
+        _editNameError = null;
     }
 
     private async Task SaveName()
     {
         if (string.IsNullOrWhiteSpace(_editNameInput)) return;
-
-        await AuthState.SetUsernameAsync(_editNameInput.Trim());
-        _isEditingName = false;
+        try
+        {
+            await AuthState.SetUsernameAsync(_editNameInput.Trim());
+            _editNameError = null;
+            _isEditingName = false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            _editNameError = ex.Message;
+        }
     }
 
     private async Task OnEditKeyDown(KeyboardEventArgs e)

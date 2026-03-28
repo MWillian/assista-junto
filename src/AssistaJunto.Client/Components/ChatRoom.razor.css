@@ -89,3 +89,12 @@
 .sent-time {
     font-size: 0.65rem;
 }
+
+.chat-block-alert {
+    background: rgba(255, 193, 7, 0.16);
+    border: 1px solid rgba(255, 193, 7, 0.36);
+    color: #ffe082;
+    border-radius: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.82rem;
+}
