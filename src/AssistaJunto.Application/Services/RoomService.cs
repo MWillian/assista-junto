@@ -8,6 +8,7 @@ namespace AssistaJunto.Application.Services;
 public class RoomService : IRoomService
 {
     private readonly IRoomRepository _roomRepository;
+    private const int MaxActiveRoomsPerOwner = 3;
 
     public RoomService(IRoomRepository roomRepository)
     {
@@ -16,6 +17,11 @@ public class RoomService : IRoomService
 
     public async Task<RoomDto> CreateRoomAsync(CreateRoomRequest request, string username)
     {
+        var activeRooms = await _roomRepository.GetActiveRoomsAsync();
+        var ownerActiveRooms = activeRooms.Count(r => string.Equals(r.OwnerName, username, StringComparison.OrdinalIgnoreCase));
+        if (ownerActiveRooms >= MaxActiveRoomsPerOwner)
+            throw new InvalidOperationException($"Limite de {MaxActiveRoomsPerOwner} salas ativas por usuário atingido.");
+
         var room = new Room(request.Name, username, request.Password);
         await _roomRepository.AddAsync(room);
 

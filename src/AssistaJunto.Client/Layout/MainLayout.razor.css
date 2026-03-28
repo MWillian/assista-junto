@@ -76,3 +76,11 @@
 .btn-logout:hover {
     background: rgba(255, 255, 255, 0.14);
 }
+
+.name-edit-alert {
+    padding: 0.5rem 1rem;
+    font-size: 0.82rem;
+    color: #ffd3db;
+    background: rgba(114, 15, 33, 0.44);
+    border-bottom: 1px solid rgba(255, 128, 157, 0.35);
+}

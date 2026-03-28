@@ -133,7 +133,11 @@ else
                         @if (_activeSocialTab == SocialTab.Chat)
                         {
                             <div class="chat-panel">
-                                <ChatRoom Messages="_chatMessages" OnSendMessage="HandleSendMessage" />
+                                <ChatRoom Messages="_chatMessages"
+                                          OnSendMessage="HandleSendMessage"
+                                          IsChatBlocked="IsChatBlocked"
+                                          ChatBlockSecondsRemaining="ChatBlockSecondsRemaining"
+                                          ChatBlockMessage="@_chatBlockMessage" />
                             </div>
                         }
                         else
@@ -182,11 +186,22 @@ else
     private SocialTab _activeSocialTab = SocialTab.Chat;
     private double _currentPlaybackTime;
     private CancellationTokenSource? _progressSyncCts;
+    private readonly List<DateTime> _localChatSentAtUtc = [];
+    private DateTime? _chatBlockedUntilUtc;
+    private string? _chatBlockMessage;
+    private CancellationTokenSource? _chatBlockCountdownCts;
 
     private DateTime _lastRemoteActionTime = DateTime.MinValue;
     private const int RemoteCooldownMs = 1500;
     private const int ProgressSyncIntervalMs = 3000;
+    private const int ChatBurstLimit = 3;
+    private const int ChatWindowSeconds = 20;
+    private const int ChatBlockSeconds = 60;
     private bool IsRemoteCooldown => (DateTime.UtcNow - _lastRemoteActionTime).TotalMilliseconds < RemoteCooldownMs;
+    private bool IsChatBlocked => _chatBlockedUntilUtc.HasValue && _chatBlockedUntilUtc.Value > DateTime.UtcNow;
+    private int ChatBlockSecondsRemaining => !IsChatBlocked
+        ? 0
+        : Math.Max(1, (int)Math.Ceiling((_chatBlockedUntilUtc!.Value - DateTime.UtcNow).TotalSeconds));
 
     protected override async Task OnInitializedAsync()
     {
@@ -203,9 +218,16 @@ else
 
     private async Task OnNameSubmitted(string name)
     {
-        await AuthState.SetUsernameAsync(name);
-        _showNamePrompt = false;
-        await JoinRoomAsync();
+        try
+        {
+            await AuthState.SetUsernameAsync(name);
+            _showNamePrompt = false;
+            await JoinRoomAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            ShowToast(ex.Message);
+        }
     }
 
     private async Task JoinRoomAsync()
@@ -230,6 +252,7 @@ else
         Hub.OnUserJoined += OnUserJoined;
         Hub.OnUserLeft += OnUserLeft;
         Hub.OnUserListReceived += OnUserListReceived;
+        Hub.OnChatBlocked += OnChatBlocked;
 
         await Hub.ConnectAsync();
         await Hub.JoinRoomAsync(RoomHash);
@@ -238,7 +261,80 @@ else
 
     private async Task HandleSendMessage(string message)
     {
+        if (!TryApplyLocalChatThrottle())
+            return;
+
         await Hub.SendChatMessageAsync(RoomHash, message);
+    }
+
+    private bool TryApplyLocalChatThrottle()
+    {
+        if (IsChatBlocked)
+            return false;
+
+        var now = DateTime.UtcNow;
+        var windowStart = now.AddSeconds(-ChatWindowSeconds);
+        _localChatSentAtUtc.RemoveAll(t => t < windowStart);
+
+        if (_localChatSentAtUtc.Count >= ChatBurstLimit)
+        {
+            ActivateChatBlock(ChatBlockSeconds, "Muitas mensagens seguidas. Aguarde para enviar novamente.");
+            return false;
+        }
+
+        _localChatSentAtUtc.Add(now);
+        return true;
+    }
+
+    private void OnChatBlocked(int secondsRemaining, string message)
+    {
+        InvokeAsync(() =>
+        {
+            ActivateChatBlock(secondsRemaining, message);
+            StateHasChanged();
+        });
+    }
+
+    private void ActivateChatBlock(int secondsRemaining, string? message)
+    {
+        _chatBlockedUntilUtc = DateTime.UtcNow.AddSeconds(Math.Max(1, secondsRemaining));
+        _chatBlockMessage = string.IsNullOrWhiteSpace(message)
+            ? "Chat temporariamente bloqueado por spam."
+            : message;
+
+        _localChatSentAtUtc.Clear();
+        StartChatBlockCountdown();
+    }
+
+    private void StartChatBlockCountdown()
+    {
+        _chatBlockCountdownCts?.Cancel();
+        _chatBlockCountdownCts?.Dispose();
+
+        _chatBlockCountdownCts = new CancellationTokenSource();
+        _ = RunChatBlockCountdownAsync(_chatBlockCountdownCts.Token);
+    }
+
+    private async Task RunChatBlockCountdownAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested && IsChatBlocked)
+            {
+                await Task.Delay(1000, cancellationToken);
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                _chatBlockedUntilUtc = null;
+                _chatBlockMessage = null;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task UpdateVolume(int newVolume)
@@ -607,6 +703,11 @@ else
         Hub.OnUserJoined -= OnUserJoined;
         Hub.OnUserLeft -= OnUserLeft;
         Hub.OnUserListReceived -= OnUserListReceived;
+        Hub.OnChatBlocked -= OnChatBlocked;
+
+        _chatBlockCountdownCts?.Cancel();
+        _chatBlockCountdownCts?.Dispose();
+        _chatBlockCountdownCts = null;
 
         await Hub.LeaveRoomAsync(RoomHash);
 

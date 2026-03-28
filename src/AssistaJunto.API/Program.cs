@@ -5,7 +5,9 @@ using AssistaJunto.Application.Services;
 using AssistaJunto.Domain.Interfaces;
 using AssistaJunto.Infrastructure.Data;
 using AssistaJunto.Infrastructure.Repositories;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 
 DotNetEnv.Env.TraversePath().Load();
 
@@ -117,6 +119,52 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"message\":\"Muitas requisições. Tente novamente em instantes.\"}", cancellationToken);
+    };
+
+    options.AddPolicy("api-global", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"{httpContext.Connection.RemoteIpAddress}",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("create-room", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Headers["X-Username"]}",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(10),
+                SegmentsPerWindow = 5,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+
+    options.AddPolicy("playlist-write", httpContext =>
+        RateLimitPartition.GetSlidingWindowLimiter(
+            partitionKey: $"{httpContext.Connection.RemoteIpAddress}:{httpContext.Request.Headers["X-Username"]}",
+            factory: _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -143,6 +191,7 @@ if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 
 app.UseCors("BlazorClient");
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHub<RoomHub>("/hubs/room");
