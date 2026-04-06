@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/EF%20Core-darkblue?style=for-the-badge" alt="EF Core">
   <img src="https://img.shields.io/badge/Bootstrap-magenta?style=for-the-badge" alt="Bootstrap">
   <br><br>
-  <img src="https://imgur.com/wjX5t5x" alt="Discord, YouTube, and Group Synchronization" width="65%">
+  <img src="https://i.imgur.com/wjX5t5x.png" alt="Discord, YouTube, and Group Synchronization" width="65%">
 
   # JAÇA CITY - WATCH PARTY
 
