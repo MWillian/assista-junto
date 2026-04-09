@@ -8,7 +8,7 @@
   <br><br>
   <img src="https://i.imgur.com/wjX5t5x.png" alt="Discord, YouTube, and Group Synchronization" width="40%">
 
-  # JAÇA CITY - WATCH PARTY
+  # ASSISTA JUNTO - WATCH PARTY
 
   **Plataforma web para assistir vídeos do YouTube em grupo, com sincronização em tempo real e integração com Discord.**
 </div>
